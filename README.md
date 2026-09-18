@@ -1,9 +1,4 @@
-&nbsp;&nbsp;<br><br><br>
-_* i say really,&nbsp;&nbsp;[github](https://github.com/AleksandrovskyV)_&nbsp;&nbsp;&nbsp;
-<br><br><br>
-
-
-## [SVG Viewer](https://github.com/AleksandrovskyV/svg_viewer)  
+# [SVG Viewer](https://github.com/AleksandrovskyV/svg_viewer)  
 
 <div class="btn-about" >
 <img src="./assets/logo/SVG_Viewer.svg" width="84" align="left" style="padding-right: 12px;">
