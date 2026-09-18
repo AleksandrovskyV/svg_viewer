@@ -1,0 +1,419 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="description" content="SVG Folder desktop viewer" />
+<title>SVG Preview</title>
+
+<link rel="preload" href="./files/favicon.ico" as="image" type="image/x-icon">
+<link rel="preload" href="./files/favicon-16x16.png" as="image">
+<link rel="preload" href="./files/favicon-32x32.png" as="image">
+
+<link rel="stylesheet" href="./files/style.css">
+
+<link rel="icon" href="./files/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="./files/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="./files/favicon-32x32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./files/apple-touch-icon.png">
+    
+</head>
+<body>
+
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <h2>Folder Tree</h2>
+            <button class="btn btn-primary" onclick="setServerPath('USER_SCAN_DIR')" style="margin-top: 5px;">Set Scan Folder</button>
+            <!--<button class="btn" onclick="setServerPath('USER_EXPORT_DIR')">Set Export Folder</button>-->
+            <a href="/dom" class="alt-link">DOM Version / v3</a>
+            <p class="alt-desc">* If some icons fail to load, try this </p>
+        </div>
+        <div id="tree-container">loading struct...</div>
+    </div>
+
+    <div id="main-content">
+        <header>
+            <div>
+                <h1 id="current-folder-title">all files</h1>
+                <div id="status" class="status">loading files...</div>
+            </div>
+            <div id="search-div">
+                <input type="text" id="search-input" placeholder="search by name..." oninput="filterAndRequestRedraw()">
+            </div>
+            <div>
+                <button class="btn" onclick="loadDataFromServer()">refresh</button>
+            </div>
+        </header>
+        
+        <!-- Вместо тяжелой галереи DOM — Canvas -->
+        <div id="canvas-container">
+            <canvas id="gallery-canvas"></canvas>
+        </div>
+    </div>
+
+<script>
+const debug = false;
+let allFilesDatabase = [];
+let filteredFiles = [];
+let currentFilterPath = "ALL_FILES";
+let serverBasePath = "";
+
+let canvas, ctx;
+let scrollY = 0;
+let maxScrollY = 0;
+
+const cellWidth = 160;
+const cellHeight = 170;
+const padding = 15;
+let cols = 1;
+
+let clickFeedback = null;
+const renderCache = new Map();
+
+window.addEventListener('DOMContentLoaded', () => {
+    canvas = document.getElementById('gallery-canvas');
+    ctx = canvas.getContext('2d');
+    window.addEventListener('resize', resizeCanvas);
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    canvas.addEventListener('click', handleCanvasClick);
+});
+
+function resizeCanvas() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    cols = Math.floor((canvas.width - padding) / (cellWidth + padding)) || 1;
+    calculateScrollBounds();
+    draw();
+}
+
+function calculateScrollBounds() {
+    const rows = Math.ceil(filteredFiles.length / cols);
+    const totalHeight = padding + rows * (cellHeight + padding);
+    maxScrollY = Math.max(0, totalHeight - canvas.height);
+    if (scrollY > maxScrollY) scrollY = maxScrollY;
+}
+
+function handleWheel(e) {
+    e.preventDefault();
+    scrollY += e.deltaY;
+    if (scrollY < 0) scrollY = 0;
+    if (scrollY > maxScrollY) scrollY = maxScrollY;
+    draw();
+}
+
+function handleCanvasClick(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top + scrollY;
+
+    const col = Math.floor((mouseX - padding) / (cellWidth + padding));
+    const row = Math.floor((mouseY - padding) / (cellHeight + padding));
+    
+    const cellX = padding + col * (cellWidth + padding);
+    const cellY = padding + row * (cellHeight + padding);
+    
+    if (mouseX >= cellX && mouseX <= cellX + cellWidth && mouseY >= cellY && mouseY <= cellY + cellHeight) {
+        const index = row * cols + col;
+        if (index >= 0 && index < filteredFiles.length) {
+            const file = filteredFiles[index];
+            clickFeedback = { index: index, startTime: Date.now() };
+            draw();
+            
+            const relativePath = file.url.startsWith('/') ? file.url.slice(1) : file.url;
+            const absoluteFullPath = `${serverBasePath}/${relativePath}`;
+            
+            navigator.clipboard.writeText(absoluteFullPath).then(() => {
+                showCanvasTooltip(e.clientX, e.clientY);
+            });
+        }
+    }
+}
+
+function showCanvasTooltip(x, y) {
+    const tooltip = document.createElement('div');
+    tooltip.className = 'canvas-tooltip';
+    tooltip.textContent = 'Path copy to buffer!';
+    
+    // Оставляем в JS только динамические координаты клика мыши
+    tooltip.style.left = `${x + 12}px`;
+    tooltip.style.top = `${y + 12}px`;
+    
+    document.body.appendChild(tooltip);
+    
+    // Плавное появление через CSS-класс
+    requestAnimationFrame(() => tooltip.classList.add('show'));
+    
+    // Плавное затухание и физическое удаление из DOM
+    setTimeout(() => {
+        tooltip.classList.remove('show');
+        setTimeout(() => tooltip.remove(), 200);
+    }, 800);
+}
+
+// ПОТОКОВЫЙ ОБРАБОТЧИК: Рендерит SVG через Blob-ссылки
+const bitmapCache = new Map();
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (filteredFiles.length === 0) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "16px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("files not found", canvas.width / 2, 100);
+        return;
+    }
+
+    const startRow = Math.floor(scrollY / (cellHeight + padding));
+    const endRow = Math.ceil((scrollY + canvas.height) / (cellHeight + padding));
+    const startIndex = Math.max(0, startRow * cols);
+    const endIndex = Math.min(endRow * cols, filteredFiles.length);
+
+    const visibleNames = new Set();
+    for (let i = startIndex; i < endIndex; i++) {
+        visibleNames.add(filteredFiles[i].name);
+    }
+
+    // Очистка кэша GPU
+    for (const [key, bitmap] of bitmapCache.entries()) {
+        if (!visibleNames.has(key) && key !== "character_export.svg") {
+            if (bitmap && typeof bitmap.close === 'function') {
+                bitmap.close(); 
+            }
+            bitmapCache.delete(key);
+        }
+    }
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    // Отрисовка стандартной сетки (как у тебя и было)
+    for (let i = startIndex; i < endIndex; i++) {
+        const file = filteredFiles[i];
+        const row = Math.floor(i / cols);
+        const col = i % cols;
+
+        const x = padding + col * (cellWidth + padding);
+        const y = padding + row * (cellHeight + padding) - scrollY;
+
+        let isClicked = false;
+        if (clickFeedback && clickFeedback.index === i) {
+            const elapsed = Date.now() - clickFeedback.startTime;
+            if (elapsed < 150) isClicked = true;
+            else clickFeedback = null;
+        }
+
+        ctx.fillStyle = isClicked ? "#ecfdf5" : "#ffffff";
+        ctx.strokeStyle = isClicked ? "#10b981" : "#e2e8f0";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x, y, cellWidth, cellHeight, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        const boxX = x + 15;
+        const boxY = y + 15;
+        const boxW = cellWidth - 30;
+        const boxH = cellHeight - 50;
+
+        ctx.strokeStyle = "#cbd5e1";
+        ctx.beginPath();
+        ctx.roundRect(boxX, boxY, boxW, boxH, 6);
+        ctx.stroke();
+
+        if (!bitmapCache.has(file.name)) {
+            const img = new Image();
+            img.src = file.url;
+            img.onload = async () => {
+                try {
+                    await img.decode();
+                    const bitmap = await createImageBitmap(img, {
+                        resizeWidth: boxW,
+                        resizeHeight: boxH,
+                        resizeQuality: 'high'
+                    });
+                    img.onload = null;
+                    img.src = '';
+                    if (visibleNames.has(file.name)) {
+                        bitmapCache.set(file.name, bitmap);
+                        requestAnimationFrame(draw); 
+                    } else {
+                        bitmap.close();
+                        bitmapCache.delete(file.name);
+                    }
+                } catch (err) {
+                    bitmapCache.set(file.name, "error");
+                    requestAnimationFrame(draw);
+                }
+            };
+            bitmapCache.set(file.name, "loading");
+        }
+
+        const cachedBitmap = bitmapCache.get(file.name);
+        if (cachedBitmap && cachedBitmap !== "loading" && cachedBitmap !== "error") {
+            ctx.drawImage(cachedBitmap, boxX, boxY);
+        }
+
+        ctx.fillStyle = "#475569";
+        ctx.font = "11px sans-serif";
+        let text = file.name;
+        if (ctx.measureText(text).width > cellWidth - 16) {
+            while (ctx.measureText(text + "...").width > cellWidth - 16 && text.length > 0) {
+                text = text.slice(0, -1);
+            }
+            text += "...";
+        }
+        ctx.fillText(text, x + cellWidth / 2, y + cellHeight - 18);
+    }
+
+    // --- ИЗОЛИРОВАННЫЙ ТЕСТ---
+    const testTarget = debug ? allFilesDatabase.find(f => f.name === "character_export.svg") : null;
+
+    if (testTarget) {
+        if (!bitmapCache.has("character_export.svg")) {
+            const testImg = new Image();
+            testImg.src = testTarget.url;
+            
+            testImg.onload = async () => {
+                try {
+                    await testImg.decode();
+                    const testBitmap = await createImageBitmap(testImg, {
+                        resizeWidth: 200,
+                        resizeHeight: 200,
+                        resizeQuality: 'high'
+                    });
+                    bitmapCache.set("character_export.svg", testBitmap);
+                    console.log("Тестовый файл успешно скомпилирован в GPU!");
+                    requestAnimationFrame(draw);
+                } catch (e) {
+                    console.error("ВНИМАНИЕ: createImageBitmap упал на тестовом файле!", e);
+                    bitmapCache.set("character_export.svg", testImg);
+                    requestAnimationFrame(draw);
+                }
+            };
+            bitmapCache.set("character_export.svg", "loading");
+        }
+
+        const testBitmap = bitmapCache.get("character_export.svg");
+        if (testBitmap && testBitmap !== "loading") {
+            ctx.save();
+            ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+            ctx.shadowBlur = 15;
+            ctx.strokeStyle = "#ef4444";
+            ctx.lineWidth = 4;
+            ctx.strokeRect(50, 50, 200, 200);
+            ctx.drawImage(testBitmap, 50, 50, 200, 200);
+            ctx.restore();
+        }
+    }
+    // -----------------------------------------------------------
+
+    if (clickFeedback) {
+        setTimeout(draw, 16);
+    }
+}
+
+
+
+async function setServerPath(type) {    
+    try {
+        const response = await fetch(`/api/set_config_path?type=${type}`);
+        const result = await response.json();
+        if (result.success) {
+            currentFilterPath = "ALL_FILES";
+            document.getElementById('current-folder-title').textContent = "Все файлы";
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) searchInput.value = '';
+            await loadDataFromServer(); 
+        }
+    } catch (err) { 
+        console.error(err); 
+    }
+}
+
+async function loadDataFromServer() {
+    try {
+        const response = await fetch('/api/data');
+        const data = await response.json();
+        
+        serverBasePath = data.base_path || "";
+        allFilesDatabase = data.files || [];
+        renderCache.clear(); 
+        
+        renderSidebarTree(data.tree);
+        filterAndRequestRedraw();
+        
+        document.getElementById('status').textContent = `Total Found: ${allFilesDatabase.length}`;
+    } catch (err) {
+        console.error(err);
+        document.getElementById('tree-container').textContent = 'Error loading';
+    }
+}
+
+function renderSidebarTree(rootNode) {
+    const container = document.getElementById('tree-container');
+    container.innerHTML = '';
+
+    const allItem = document.createElement('div');
+    allItem.className = 'tree-item all-files';
+    allItem.textContent = 'Все файлы';
+    if (currentFilterPath === 'ALL_FILES') allItem.classList.add('active');
+    allItem.onclick = () => switchFolder('ALL_FILES', 'Все файлы');
+    container.appendChild(allItem);
+
+    const uniquePaths = new Set();
+    allFilesDatabase.forEach(f => { if (f.folderPath) uniquePaths.add(f.folderPath); });
+
+    const rootItem = document.createElement('div');
+    rootItem.className = 'tree-item root-folder';
+    rootItem.textContent = (rootNode && rootNode.name) ? rootNode.name : "Корень";
+    if (currentFilterPath === '') rootItem.classList.add('active');
+    rootItem.onclick = () => switchFolder('', (rootNode && rootNode.name) ? rootNode.name : "Корень");
+    container.appendChild(rootItem);
+
+    Array.from(uniquePaths).sort().forEach(pPath => {
+        const item = document.createElement('div');
+        item.className = 'tree-item';
+        item.textContent = pPath;
+        if (currentFilterPath === pPath) item.classList.add('active');
+        item.onclick = () => switchFolder(pPath, pPath);
+        container.appendChild(item);
+    });
+}
+
+function switchFolder(path, displayName) {
+    currentFilterPath = path;
+    document.getElementById('current-folder-title').textContent = displayName;
+    document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active'));
+    
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) searchInput.value = '';
+    
+    scrollY = 0; 
+    filterAndRequestRedraw();
+}
+
+function filterAndRequestRedraw() {
+    filteredFiles = allFilesDatabase.filter(file => {
+        if (currentFilterPath === 'ALL_FILES') return true;
+        return file.folderPath === currentFilterPath;
+    });
+    
+    const searchInput = document.getElementById('search-input');
+    const searchQuery = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    
+    if (searchQuery) {
+        filteredFiles = filteredFiles.filter(file => 
+            file.name.toLowerCase().includes(searchQuery)
+        );
+    }
+    
+    if (canvas) {
+        calculateScrollBounds();
+        resizeCanvas(); 
+    }
+}
+
+loadDataFromServer();
+
+</script>
+
+</body>
+</html>

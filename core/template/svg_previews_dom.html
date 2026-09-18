@@ -1,0 +1,231 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="description" content="SVG Folder desktop viewer" />
+<title>SVG Preview</title>
+
+<link rel="preload" href="./files/favicon.ico" as="image" type="image/x-icon">
+<link rel="preload" href="./files/favicon-16x16.png" as="image">
+<link rel="preload" href="./files/favicon-32x32.png" as="image">
+
+<link rel="stylesheet" href="./files/style.css">
+
+<link rel="icon" href="./files/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="./files/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="./files/favicon-32x32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./files/apple-touch-icon.png">
+
+</head>
+<body>
+
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <h2>Folder Tree</h2>
+            <button class="btn btn-primary" onclick="setServerPath('USER_SCAN_DIR')" style="margin-top: 5px;">Set Scan Folder</button>
+             <!--<button class="btn" onclick="setServerPath('USER_EXPORT_DIR')">Set Export Folder</button>-->
+            <a href="/" class="alt-link">Canvas Version</a>
+            <p class="alt-desc">* Back to the Source...</p>
+        </div>
+        <div id="tree-container">loading struct...</div>
+    </div>
+
+    <div id="main-content">
+        <header>
+            <div>
+                <h1 id="current-folder-title">all files</h1>
+                <div id="status" class="status">loading files...</div>
+            </div>
+            <div id="search-div">
+                <input type="text" id="search-input" placeholder="search by name..." oninput="displayGallery()">
+            </div>
+            <div>
+                <button class="btn" onclick="loadDataFromServer()">refresh</button>
+            </div>
+        </header>
+        <div id="gallery-wrapper">
+            <div class="gallery" id="gallery"></div>
+        </div>
+    </div>
+
+    <div id="sandbox"></div>
+
+<script>
+let allFilesDatabase = [];
+let currentFilterPath = "ALL_FILES";
+
+// Инициализируем один глобальный обсервер для ленивой подгрузки URL
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        const card = entry.target;
+        const container = card.querySelector('.svg-container');
+        const fileUrl = card.dataset.url; 
+
+        if (entry.isIntersecting) {
+            const img = document.createElement('img');
+            img.src = fileUrl;
+            img.alt = card.dataset.id;
+            
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.objectFit = 'contain'; 
+
+            container.innerHTML = '';
+            container.appendChild(img);
+        } else {
+            container.innerHTML = ''; 
+        }
+    });
+}, {
+    root: document.getElementById('gallery-wrapper'),
+    rootMargin: '250px 0px 250px 0px' 
+});
+
+async function setServerPath(type) {    
+    try {
+        const response = await fetch(`/api/set_config_path?type=${type}`);
+        const result = await response.json();
+        if (result.success) {
+            currentFilterPath = "ALL_FILES";
+            document.getElementById('current-folder-title').textContent = "Все файлы";
+            await loadDataFromServer(); 
+        }
+    } catch (err) { console.error(err); }
+}
+
+async function loadDataFromServer() {
+    try {
+        const response = await fetch('/api/data');
+        const data = await response.json();
+        
+        allFilesDatabase = data.files || [];
+        
+        renderSidebarTree(data.tree);
+        displayGallery();
+        
+        document.getElementById('status').textContent = `total found: ${allFilesDatabase.length}`;
+    } catch (err) {
+        console.error(err);
+        document.getElementById('tree-container').textContent = 'Error load';
+    }
+}
+
+function renderSidebarTree(rootNode) {
+    const container = document.getElementById('tree-container');
+    container.innerHTML = '';
+
+    const allItem = document.createElement('div');
+    allItem.className = 'tree-item all-files';
+    allItem.textContent = 'Все файлы';
+    if (currentFilterPath === 'ALL_FILES') allItem.classList.add('active');
+    allItem.onclick = () => switchFolder('ALL_FILES', 'Все файлы');
+    container.appendChild(allItem);
+
+    const uniquePaths = new Set();
+    allFilesDatabase.forEach(f => { if (f.folderPath) uniquePaths.add(f.folderPath); });
+
+    const rootItem = document.createElement('div');
+    rootItem.className = 'tree-item root-folder';
+    rootItem.textContent = (rootNode && rootNode.name) ? rootNode.name : "Корень";
+    if (currentFilterPath === '') rootItem.classList.add('active');
+    rootItem.onclick = () => switchFolder('', (rootNode && rootNode.name) ? rootNode.name : "Корень");
+    container.appendChild(rootItem);
+
+    Array.from(uniquePaths).sort().forEach(pPath => {
+        const item = document.createElement('div');
+        item.className = 'tree-item';
+        item.textContent = pPath;
+        if (currentFilterPath === pPath) item.classList.add('active');
+        item.onclick = () => switchFolder(pPath, pPath);
+        container.appendChild(item);
+    });
+}
+
+function switchFolder(path, displayName) {
+    currentFilterPath = path;
+    document.getElementById('current-folder-title').textContent = displayName;
+    document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active'));
+    displayGallery();
+}
+
+function displayGallery() {
+    const gallery = document.getElementById('gallery');
+    gallery.innerHTML = '';
+    
+    observer.disconnect();
+    
+    let filteredFiles = allFilesDatabase.filter(file => {
+        if (currentFilterPath === 'ALL_FILES') return true;
+        return file.folderPath === currentFilterPath;
+    });
+    
+    const searchInput = document.getElementById('search-input');
+    const searchQuery = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    
+    if (searchQuery) {
+        filteredFiles = filteredFiles.filter(file => 
+            file.name.toLowerCase().includes(searchQuery)
+        );
+    }
+    
+    if (filteredFiles.length === 0) {
+        gallery.innerHTML = '<div class="gallery-empty">Files not found</div>';
+        return;
+    }
+
+    filteredFiles.forEach((file) => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.dataset.id = file.name;
+        card.dataset.url = file.url;
+        card.style.cursor = 'pointer'; 
+        
+        card.onclick = (e) => {
+
+            const relativePath = file.url.startsWith('/') ? file.url.slice(1) : file.url;
+            
+            navigator.clipboard.writeText(relativePath).then(() => {
+                // Создаем тултип и вешаем класс из style.css
+                const tooltip = document.createElement('div');
+                tooltip.className = 'dom-tooltip';
+                tooltip.textContent = 'Path copy to buffer!';
+                tooltip.style.left = `${e.clientX + 10}px`;
+                tooltip.style.top = `${e.clientY + 10}px`; 
+                
+                document.body.appendChild(tooltip);
+
+                requestAnimationFrame(() => {
+                    tooltip.classList.add('show');
+                });
+                
+                setTimeout(() => {
+                    tooltip.classList.remove('show');
+                    tooltip.classList.add('hide');
+                    setTimeout(() => tooltip.remove(), 200);
+                }, 1000);
+
+            }).catch(err => {
+                console.error('Fail copy path: ', err);
+            });
+        };
+        
+        const container = document.createElement('div');
+        container.className = 'svg-container'; 
+        
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'file-name';
+        nameDiv.textContent = file.name;
+        
+        card.appendChild(container);
+        card.appendChild(nameDiv);
+        gallery.appendChild(card);
+        
+        observer.observe(card);
+    });
+}
+
+loadDataFromServer();
+
+
+
+</script>
+
+</body>
+</html>

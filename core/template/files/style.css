@@ -1,0 +1,107 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0; padding: 0; background: #f8fafc; color: #1e293b;
+    display: flex; height: 100vh; overflow: hidden;
+}
+#sidebar {
+    width: 280px; background: #ffffff; border-right: 1px solid #e2e8f0;
+    display: flex; flex-direction: column; flex-shrink: 0;
+}
+.sidebar-header { padding: 20px; border-bottom: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 8px; }
+.sidebar-header h2 { margin: 0; font-size: 18px; color: #0f172a; }
+#tree-container { flex: 1; overflow-y: auto; padding: 15px 10px; }
+.tree-item {
+    padding: 8px 10px; border-radius: 6px; cursor: pointer;
+    display: flex; align-items: center; font-size: 13px; font-weight: 500;
+    color: #334155; user-select: none; margin-bottom: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tree-item:hover { background: #f1f5f9; }
+.tree-item.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
+.tree-item::before { content: "📁"; margin-right: 8px; font-size: 14px; }
+.tree-item.all-files::before { content: "📦"; }
+.tree-item.root-folder::before { content: "💻"; }
+
+#main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+header {
+    background: #ffffff; padding: 15px 30px; border-bottom: 1px solid #e2e8f0;
+    display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+}
+h1 { margin: 0; font-size: 20px; color: #0f172a; }
+.status { font-size: 13px; color: #64748b; margin-top: 2px; }
+
+#search-div { flex: 1; max-width: 400px; margin: 0 20px;}
+#search-input { width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; box-sizing: border-box; outline: none; }
+
+/* Контейнер для Canvas холста */
+#canvas-container { flex: 1; position: relative; background: #f8fafc; outline: none; }
+canvas { display: block; width: 100%; height: 100%; cursor: pointer; }
+
+.btn { background: #64748b; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }
+.btn:hover { background: #475569; }
+.btn-primary { background: #2563eb; }
+.btn-primary:hover { background: #1d4ed8; }
+
+
+.canvas-tooltip {position: fixed;background: #10b981;color: #ffffff;padding: 6px 12px;
+border-radius: 6px;font-size: 12px;font-weight: 600;z-index: 99999;pointer-events: none;
+opacity: 0;transition: opacity 0.2s ease;
+}
+.canvas-tooltip.show {opacity: 1;}
+
+.alt-link {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #2563eb;
+    text-decoration: underline;
+}
+.alt-desc {
+    margin: 2px 0 0 0;
+    font-size: 11px;
+    color: #64748b;
+    line-height: 13px;
+}
+
+/* ИСПРАВЛЕННЫЙ ВАРИАНТ ДЛЯ DOM ДВИЖКА */
+
+#gallery-wrapper { flex: 1; overflow-y: auto; padding: 30px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
+.gallery-empty {
+    grid-column: 1 / -1; /* Растягиваем блок на всю ширину сетки */
+    text-align: center;color: #94a3b8;margin-top: 50px;font-size: 14px;font-weight: 500;
+}
+
+.card { 
+    background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; 
+    display: flex; flex-direction: column; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    height: 170px; box-sizing: border-box;
+}
+.svg-container { 
+    display: flex; align-items: center; justify-content: center; border: 1px dashed #cbd5e1; 
+    border-radius: 6px; background: #ffffff; margin-bottom: 8px; width: 100%; height: 120px; overflow: hidden; 
+}
+.svg-container svg { max-width: 100%; max-height: 100%; width: 100%; height: 100%; }
+.file-name { font-size: 12px; font-weight: 500; color: #334155; text-align: center; word-break: break-all; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+#sandbox { position: absolute; top: -9999px; left: -9999px; visibility: hidden; }
+
+/* Класс для плавающего тултипа в DOM-версии */
+.dom-tooltip {
+    position: fixed;
+    background: #0f172a;
+    color: #ffffff;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    z-index: 99999;
+    pointer-events: none;
+    transform: translateY(5px);
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.dom-tooltip.show {opacity: 1;transform: translateY(0);}
+
+/* Дополнительный класс для анимации улетания вверх при скрытии */
+.dom-tooltip.hide {opacity: 0;transform: translateY(-5px);}
