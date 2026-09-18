@@ -12,6 +12,13 @@ _* i say really,&nbsp;&nbsp;[github](https://github.com/AleksandrovskyV)_&nbsp;&
 <em>It`s a viewer.. svg viewer "</em>
 </p><br clear="left"></div>
 
+<br>
+
+Создёт локальный сервер, открывает .html в качестве интерфейса<br>
+для просмотра файлов с типом .svg для выбранной папки <br>
+\* включая  подпапки 
+
+<br>
 
 Download \[.exe\] for Windows 10 > [DOWNLOAD](https://github.com/AleksandrovskyV/svg_viewer/releases/download/v0/svg_viewer.exe)
 
