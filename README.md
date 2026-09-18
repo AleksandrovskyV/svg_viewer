@@ -1,4 +1,4 @@
-# [SVG Viewer](https://github.com/AleksandrovskyV/svg_viewer)  
+# SVG Viewer
 
 <div class="btn-about" >
 <img src="./assets/logo/SVG_Viewer.svg" width="84" align="left" style="padding-right: 12px;">
