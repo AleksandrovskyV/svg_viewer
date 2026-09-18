@@ -8,7 +8,7 @@ _* i say really,&nbsp;&nbsp;[github](https://github.com/AleksandrovskyV)_&nbsp;&
 <div class="btn-about" >
 <img src="./assets/logo/SVG_Viewer.svg" width="84" align="left" style="padding-right: 12px;">
 <p style="margin-top: 12px ">
-<strong> Tested:</strong> R23<br>
+<strong> Tested:</strong> Windows 10<br>
 <em>It`s a viewer.. svg viewer "</em>
 </p><br clear="left"></div>
 
