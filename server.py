@@ -129,7 +129,7 @@ def ask_directory(title_text="SelectFolder"):
     # 2 - Windows Explorer for set folder (trick OpenFileDialog)
     MODE = 0
     
-    if MODE == 2:
+    if MODE == 0:
         from tkinter import filedialog, Tk
 
         tkwindow = Tk()
